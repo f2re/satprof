@@ -11,7 +11,7 @@ worker:
   retry_delay_seconds: 120
   max_attempts: 3
   schedules:
-    sync_soundings: 900
+    sync_soundings: 1800
     scan_satdump: 60
     sync_tle: 21600
     update_statistics: 86400
@@ -19,11 +19,19 @@ worker:
 
 satdump:
   enabled: true
+  # Исходники строго из f2re/SatDump release/1.2.2.
   root: /opt/SatDump
-  required_branch: release/1.2.2
   repository: https://github.com/f2re/SatDump
+  required_branch: release/1.2.2
+  # Для полностью воспроизводимой эксплуатации укажите полный SHA commit.
+  expected_commit: ""
   runner: scripts/astra/run.sh
+  # Версионированные сборки создаются в /opt/satdump/releases, current переключается атомарно.
+  install_prefix: /opt/satdump/current
   timeout_seconds: 7200
+  health_timeout_seconds: 30
+  reuse_successful_output: true
+  max_extra_args: 64
   inbox: inbox/satdump
   output: satdump-output
   manifest_glob: "*.satprof.json"
@@ -43,23 +51,6 @@ tle:
 pressure_grid_hpa: [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 70, 50, 30, 20, 10]
 
 sources:
-  wis2:
-    enabled: false
-    broker: mqtts://everyone:everyone@wis2broker.globaldata.nws.noaa.gov:8883
-    username_env: SATPROF_WIS2_USERNAME
-    password_env: SATPROF_WIS2_PASSWORD
-    topics:
-      - cache/a/wis2/+/data/core/weather/surface-based-observations/temp/#
-    download_dir: inbox/wis2
-    file_globs: ["*.bufr", "*.bufr4", "*.bin"]
-    media_types: [application/bufr, application/x-bufr, application/octet-stream]
-    qos: 1
-    keepalive: 60
-    verify_tls: true
-    require_bufr_magic: true
-    download_timeout_seconds: 90
-    max_download_bytes: 134217728
-    enqueue_sync: true
   igra:
     enabled: false
     stations: []
@@ -70,7 +61,18 @@ sources:
     download_limit: 24
     bufr_url: https://opendata.dwd.de/weather/weather_reports/radiosonde/bufr/
     trajectories_url: https://opendata.dwd.de/weather/weather_reports/radiosonde/trajectories/
-  roshydromet: {enabled: false, url: ""}
+  wis2:
+    enabled: false
+    broker: mqtts://everyone:everyone@wis2broker.globaldata.nws.noaa.gov:8883
+    topics:
+      - cache/a/wis2/+/data/core/weather/surface-based-observations/temp/#
+    download_dir: inbox/wis2
+    verify_tls: true
+    require_bufr_magic: true
+    enqueue_sync: true
+  roshydromet:
+    enabled: false
+    url: ""
 
 instruments:
   mtvza_gy:
@@ -170,3 +172,16 @@ rttov:
   gas_units: 1
   use_fastem: true
   default_co2_ppmv: 420.0
+
+monitoring:
+  min_free_gib: 5
+  min_free_percent: 5
+  max_queue_age_minutes: 45
+  max_running_age_minutes: 90
+  max_sounding_age_hours: 18
+  max_satellite_age_hours: 8
+  max_matchup_age_hours: 48
+  max_model_age_hours: 336
+  # На этапе ввода в эксплуатацию отсутствие данных является предупреждением.
+  require_fresh_data_for_readiness: false
+  require_rttov_for_readiness: false

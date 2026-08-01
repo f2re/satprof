@@ -1,37 +1,60 @@
-# Эксплуатация SatProf
+# Эксплуатация
 
 ## Службы
 
-```text
-satprof-web.service     API и OpenLayers
-satprof-worker.service  очередь, SatDump, RTTOV, обучение
-satprof-wis2.service    постоянная MQTT(S)-подписка TEMP
-```
-
-WIS2 включайте только после `sources.wis2.enabled: true`.
-
 ```bash
-sudo systemctl enable --now satprof-worker satprof-web
-sudo systemctl enable --now satprof-wis2
-```
-
-## Диагностика
-
-```bash
-systemctl status satprof-worker satprof-web satprof-wis2
+systemctl status satprof-web satprof-worker satprof-wis2
+systemctl status satprof-monitor.timer
 journalctl -u satprof-worker -f
-journalctl -u satprof-wis2 -f
-curl -s http://127.0.0.1:8088/api/v1/health | python -m json.tool
-curl -s http://127.0.0.1:8088/api/v1/sources | python -m json.tool
-.venv/bin/satprof jobs --config /etc/satprof/config.yaml
+journalctl -u satprof-monitor.service
 ```
 
-Ошибка отдельного BUFR регистрируется как `source.file_error` и не прерывает пакет. Ошибка DWD, одной станции IGRA или notification WIS2 изолируется и остаётся в events.
+Worker и web включаются установщиком. WIS2 включается только при `sources.wis2.enabled: true`.
 
-## Резервная копия
+## Ежедневная проверка
 
-Сохраняйте `catalog.sqlite`, `soundings/`, `satellite/`, `matchups/`, `models/`, `reports/`, WIS2 sidecar, конфигурацию и коэффициенты RTTOV.
+```bash
+curl -fsS http://127.0.0.1:8088/health/ready | python -m json.tool
+/opt/satprof/.venv/bin/satprof-monitor --config /etc/satprof/config.yaml --deep
+```
 
-## Production
+Проверьте возраст спутниковых данных, ошибки очереди, свободное место, branch/commit SatDump и наличие коэффициентов RTTOV.
 
-Перед активным применением поправок накопите несколько недель Level‑1C/TEMP, проверьте O−B по каналу, скану, углу, поверхности и орбите, подтвердите коэффициенты на независимом периоде/GRUAN и начинайте WRFDA с 1–2 устойчивых температурных каналов.
+## Резервное копирование
+
+Сохраняйте:
+
+```text
+/etc/satprof/
+/opt/satprof/workspace/catalog.sqlite
+/opt/satprof/workspace/soundings/
+/opt/satprof/workspace/satellite/
+/opt/satprof/workspace/matchups/
+/opt/satprof/workspace/models/
+/opt/satprof/workspace/reports/
+/opt/rttov/coefficients/
+```
+
+Перед копированием SQLite используйте `sqlite3 catalog.sqlite '.backup ...'` либо кратко остановите worker.
+
+## Обновление и откат
+
+```bash
+bash scripts/update.sh
+bash scripts/astra/rollback.sh
+```
+
+Конфигурация и Workspace не удаляются. Новая venv переключается только после тестов; при неуспешной readiness-проверке deploy возвращает предыдущий release.
+
+## SatDump
+
+```bash
+bash scripts/astra/build-satdump.sh
+bash scripts/astra/healthcheck.sh --deep
+```
+
+Не изменяйте `/opt/satdump/current` вручную. Сборки хранятся в `/opt/satdump/releases`, а symlink переключается после `version` smoke-test.
+
+## Очистка
+
+Автоматически сохраняются несколько последних release. Каталоги `satdump-output/archive` и `failed` требуют отдельной политики хранения в соответствии с объёмом исходных данных. Не удаляйте каталоги, на которые ссылается `current`.

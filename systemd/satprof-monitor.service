@@ -1,22 +1,14 @@
 [Unit]
-Description=SatProf web interface
-After=network-online.target
-Wants=network-online.target
-StartLimitIntervalSec=120
-StartLimitBurst=5
+Description=SatProf deep health and readiness check
+After=satprof-web.service satprof-worker.service
 
 [Service]
-Type=simple
+Type=oneshot
 User=satprof
 Group=satprof
 WorkingDirectory=/opt/satprof
 EnvironmentFile=-/etc/satprof/satprof.env
-ExecStart=/opt/satprof/.venv/bin/satprof-web --config ${SATPROF_CONFIG}
-Restart=on-failure
-RestartSec=5
-TimeoutStartSec=60
-TimeoutStopSec=30
-KillSignal=SIGINT
+ExecStart=/opt/satprof/.venv/bin/satprof-monitor --config ${SATPROF_CONFIG} --deep --write-snapshot --allow-degraded
 UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true
@@ -29,6 +21,3 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
 MemoryDenyWriteExecute=false
-
-[Install]
-WantedBy=multi-user.target

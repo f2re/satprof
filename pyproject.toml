@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "satprof"
-version = "0.4.0"
+version = "0.5.0"
 description = "Автоматическая калибровка спутниковых радиаций, восстановление профилей и интеграция SatDump/WRFDA"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,6 +26,7 @@ satprof = "satprof_calibrator.cli:main"
 satprof-web = "satprof_calibrator.web.app:main"
 satprof-worker = "satprof_calibrator.worker:main"
 satprof-wis2 = "satprof_calibrator.sources.wis2:main"
+satprof-monitor = "satprof_calibrator.monitoring:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

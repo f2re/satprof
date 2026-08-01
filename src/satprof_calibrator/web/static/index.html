@@ -38,13 +38,17 @@
       </section>
       <section class="card system-card">
         <div class="card-heading"><div><span class="eyebrow">Фоновая обработка</span><h2>Состояние системы</h2></div></div>
-        <div id="counters" class="counter-grid"></div><div id="sourceStatus" class="source-status" aria-live="polite"></div>
+        <div id="counters" class="counter-grid"></div>
+        <div class="jobs-title">Контроль готовности</div><div id="monitoringStatus" class="source-status" aria-live="polite"></div>
+        <div class="jobs-title">Источники зондирования</div><div id="sourceStatus" class="source-status" aria-live="polite"></div>
         <div class="quick-actions"><button data-job="source.sync" class="button secondary">Загрузить зонды</button><button data-job="satdump.scan" class="button secondary">Проверить SatDump</button><button data-job="tle.sync" class="button secondary">Обновить TLE</button><button data-job="calibration.train" class="button primary">Пересчитать калибровку</button></div>
         <div class="jobs-title">Последние задания</div><div id="jobsList" class="jobs-list"></div>
       </section>
     </aside>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/ol@10.6.1/dist/ol.js"></script>
-  <script src="/static/app.js" defer></script><script src="/static/source-status.js" defer></script>
+  <script src="/static/app.js" defer></script>
+  <script src="/static/source-status.js" defer></script>
+  <script src="/static/monitoring-status.js" defer></script>
 </body>
 </html>

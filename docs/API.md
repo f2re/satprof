@@ -1,16 +1,26 @@
 # API SatProf
 
-Базовый префикс: `/api/v1`. Интерактивная схема: `/docs`, OpenAPI JSON: `/openapi.json`.
+Базовый префикс: `/api/v1`.
 
-## Состояние
+## Проверка процессов
 
 ```http
-GET /api/v1/health
-GET /api/v1/status
-GET /api/v1/sources
+GET /health/live
+GET /health/ready
+GET /health/ready?deep=true
 ```
 
-`/sources` возвращает статистику разобранных файлов и состояние WIS2: статус, счётчики, последний topic/data_id и ошибки.
+`ready` возвращает HTTP 503 при критической ошибке Workspace, SQLite, очереди или обязательного SatDump/RTTOV.
+
+## Мониторинг
+
+```http
+GET /api/v1/monitoring
+GET /api/v1/monitoring?deep=true
+GET /metrics
+```
+
+`/metrics` использует Prometheus text exposition format.
 
 ## Получение профиля
 
@@ -21,35 +31,30 @@ Content-Type: application/json
 {"latitude":59.9,"longitude":30.3,"instrument":"mtvza_gy","max_distance_km":120}
 ```
 
-Ответ содержит поле зрения, модель, уровни давления, температуру, удельную и относительную влажность и предупреждения. При отсутствии гранулы или модели возвращается диагностическая ошибка, а не синтетический профиль.
-
-## Карта
-
-```http
-GET /api/v1/satellites
-GET /api/v1/granules?instrument=mtvza_gy&limit=80
-GET /api/v1/granules/123
-```
-
-`/satellites` и `/granules` используют GeoJSON WGS84.
+Ответ содержит поле зрения, модель, уровни давления, температуру, удельную и относительную влажность и предупреждения.
 
 ## Задания
 
 ```http
 POST /api/v1/jobs
-Content-Type: application/json
-
 {"job_type":"source.sync","payload":{},"dedupe_key":"manual:source.sync"}
 ```
 
-Типы ограничены белым списком. Активные задания с одним `dedupe_key` не дублируются.
+Допустимые типы ограничены белым списком. SatDump-манифест должен находиться внутри настроенного inbox.
 
-## SatDump и модели
+## Остальные endpoints
 
-```http
+```text
+GET  /api/v1/health
+GET  /api/v1/status
+GET  /api/v1/sources
+GET  /api/v1/satellites
+GET  /api/v1/granules
+GET  /api/v1/granules/{id}
+GET  /api/v1/jobs
+GET  /api/v1/jobs/{id}
 POST /api/v1/satdump/process
-GET /api/v1/models?instrument=mtvza_gy&model_type=bias
-GET /api/v1/models?instrument=mtvza_gy&model_type=retrieval
+GET  /api/v1/models
 ```
 
-SatDump-манифест обязан находиться внутри настроенного inbox.
+`/satellites` и `/granules` возвращают GeoJSON WGS84. Полная схема доступна в `/docs` и `/openapi.json`.

@@ -1,0 +1,63 @@
+name: Нативная проверка Astra Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_satdump:
+        description: "Собирать SatDump release/1.2.2"
+        required: false
+        default: true
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - "scripts/astra/**"
+      - "systemd/**"
+      - "pyproject.toml"
+      - ".github/workflows/astra-self-hosted.yml"
+
+concurrency:
+  group: astra-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  astra:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: astra-1.6
+          - label: astra-1.7
+    runs-on: [self-hosted, linux, x64, "${{ matrix.label }}"]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+      - name: Проверка Astra
+        run: bash scripts/astra/check-system.sh --strict
+      - name: Тестовая сборка SatProf
+        run: |
+          bash scripts/astra/deploy.sh \
+            --source "$GITHUB_WORKSPACE" \
+            --prefix "$RUNNER_TEMP/satprof" \
+            --config "$RUNNER_TEMP/satprof-config.yaml" \
+            --workspace "$RUNNER_TEMP/satprof-workspace" \
+            --no-start
+      - name: SatDump release/1.2.2
+        if: ${{ github.event_name == 'push' || inputs.build_satdump }}
+        env:
+          SATDUMP_SOURCE: ${{ runner.temp }}/SatDump
+          SATDUMP_INSTALL_ROOT: ${{ runner.temp }}/satdump
+        run: bash scripts/astra/build-satdump.sh --install-deps
+      - name: Офлайн-бандл
+        env:
+          SATDUMP_SOURCE: ${{ runner.temp }}/SatDump
+          SATDUMP_PREFIX: ${{ runner.temp }}/satdump/current
+        run: bash scripts/astra/build-offline-bundle.sh --output "$RUNNER_TEMP/artifacts"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: satprof-${{ matrix.label }}-${{ github.sha }}
+          path: ${{ runner.temp }}/artifacts/*
+          if-no-files-found: error
+          retention-days: 14
