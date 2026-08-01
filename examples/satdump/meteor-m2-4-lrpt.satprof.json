@@ -1,0 +1,13 @@
+{
+  "schema":"satprof.satdump-job/1",
+  "input_file":"./meteor_m2-4_20260801_0900.cs16",
+  "pipeline":"meteor_m2x_lrpt",
+  "input_level":"baseband",
+  "samplerate":240000,
+  "baseband_format":"cs16",
+  "instrument":"mtvza_gy",
+  "satellite":"Метеор-М №2-4",
+  "output_name":"meteor-m2-4-20260801-0900",
+  "extra_args":[],
+  "reader":{"type":"netcdf","glob":"**/*level1c*.nc","mapping":"config/satellite_mapping.example.yaml"}
+}

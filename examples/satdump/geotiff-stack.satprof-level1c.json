@@ -1,0 +1,15 @@
+{
+  "schema":"satprof.level1c-geotiff-stack/1",
+  "granule_id":"meteor-m2-4-mtvza-20260801T090000Z",
+  "instrument":"mtvza_gy",
+  "satellite":"Метеор-М №2-4",
+  "observation_time":"2026-08-01T09:00:00Z",
+  "calibration_state":"calibrated",
+  "stride":1,
+  "satellite_zenith_deg":20.0,
+  "channels":[
+    {"id":11,"path":"mtvza_ch11_tb.tif","band":1,"unit":"K","scale":0.01,"offset":0.0},
+    {"id":12,"path":"mtvza_ch12_tb.tif","band":1,"unit":"K","scale":0.01,"offset":0.0}
+  ],
+  "metadata":{"producer":"SatDump release/1.2.2 + site L1C exporter","note":"Только физические TB"}
+}

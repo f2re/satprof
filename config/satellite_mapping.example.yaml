@@ -1,0 +1,18 @@
+variables:
+  brightness_temperature: brightness_temperature
+  brightness_temperature_corrected: brightness_temperature_corrected
+  latitude: latitude
+  longitude: longitude
+  time: observation_time
+  channel: channel
+  scan_position: scan_position
+  satellite_zenith: satellite_zenith
+  satellite_azimuth: satellite_azimuth
+  solar_zenith: solar_zenith
+  surface_type: surface_type
+  cloud_fraction: cloud_fraction
+  quality_flag: quality_flag
+attributes:
+  satellite: platform
+  instrument: instrument
+time_from_filename_regex: '(?P<date>\d{8})[_T]?(?P<time>\d{6})'
