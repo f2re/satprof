@@ -17,6 +17,7 @@ from ..jobs import JobQueue
 from ..orbit import satellite_geojson
 from ..profiles import ProfileRetrievalError, granule_footprint, retrieve_profile
 from ..storage import Workspace
+from .source_status import source_status
 
 ALLOWED_JOB_TYPES={"source.sync","tle.sync","satdump.scan","satdump.process","instrument.refresh","calibration.train","statistics.update"}
 
@@ -37,7 +38,7 @@ def _row_to_public(row) -> dict[str,Any]:
 
 
 def create_app(*,workspace: str|Path|None=None,config: str|Path|None=None,cfg: dict[str,Any]|None=None) -> FastAPI:
-    cfg=cfg or load_config(config); ws=Workspace(workspace_path(cfg,workspace)); ws.init(); queue=JobQueue(ws); static_dir=Path(__file__).with_name("static"); app=FastAPI(title="SatProf API",version="0.3.0",description="Автоматическая калибровка спутниковых радиаций и восстановление профилей атмосферы"); app.state.workspace=ws; app.state.config=cfg; app.state.queue=queue; app.mount("/static",StaticFiles(directory=static_dir),name="static")
+    cfg=cfg or load_config(config); ws=Workspace(workspace_path(cfg,workspace)); ws.init(); queue=JobQueue(ws); static_dir=Path(__file__).with_name("static"); app=FastAPI(title="SatProf API",version="0.4.0",description="Автоматическая калибровка спутниковых радиаций и восстановление профилей атмосферы"); app.state.workspace=ws; app.state.config=cfg; app.state.queue=queue; app.mount("/static",StaticFiles(directory=static_dir),name="static")
     @app.get("/",include_in_schema=False)
     def index(): return FileResponse(static_dir/"index.html")
     @app.get("/api/v1/health")
@@ -45,9 +46,12 @@ def create_app(*,workspace: str|Path|None=None,config: str|Path|None=None,cfg: d
         satdump=SatDumpRunner(ws,cfg).validate()
         try: import sgp4; sgp4_available=True
         except ImportError: sgp4_available=False
-        return {"status":"ok","time":datetime.now(timezone.utc).isoformat(),"version":"0.3.0","workspace":str(ws.root),"counts":ws.counts(),"satdump":satdump,"sgp4_available":sgp4_available}
+        sources=source_status(ws,cfg)
+        return {"status":"ok","time":datetime.now(timezone.utc).isoformat(),"version":"0.4.0","workspace":str(ws.root),"counts":ws.counts(),"satdump":satdump,"sgp4_available":sgp4_available,"sources":sources}
     @app.get("/api/v1/status")
-    def status(): return {"counts":ws.counts(),"jobs":queue.list(limit=30),"events":[_row_to_public(r) for r in ws.recent_events(30)],"models":[_row_to_public(r) for r in ws.model_rows(limit=20)]}
+    def status(): return {"counts":ws.counts(),"jobs":queue.list(limit=30),"events":[_row_to_public(r) for r in ws.recent_events(30)],"models":[_row_to_public(r) for r in ws.model_rows(limit=20)],"sources":source_status(ws,cfg)}
+    @app.get("/api/v1/sources")
+    def sources(): return source_status(ws,cfg)
     @app.get("/api/v1/satellites")
     def satellites(): return satellite_geojson(ws,cfg)
     @app.get("/api/v1/granules")

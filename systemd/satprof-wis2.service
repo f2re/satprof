@@ -1,0 +1,22 @@
+[Unit]
+Description=SatProf WIS 2.0 TEMP subscriber
+After=network-online.target satprof-worker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=satprof
+Group=satprof
+WorkingDirectory=/opt/satprof
+EnvironmentFile=-/etc/satprof/satprof.env
+ExecStart=/opt/satprof/.venv/bin/satprof-wis2 --config ${SATPROF_CONFIG}
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/satprof/workspace
+
+[Install]
+WantedBy=multi-user.target

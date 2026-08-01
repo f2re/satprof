@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "satprof"
-version = "0.3.0"
+version = "0.4.0"
 description = "Автоматическая калибровка спутниковых радиаций, восстановление профилей и интеграция SatDump/WRFDA"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,13 +17,15 @@ bufr = ["eccodes>=1.6"]
 netcdf = ["netCDF4>=1.6"]
 orbit = ["sgp4>=2.23"]
 satdump = ["rasterio>=1.3", "Pillow>=10", "cbor2>=5.6"]
-all = ["eccodes>=1.6", "netCDF4>=1.6", "sgp4>=2.23", "rasterio>=1.3", "Pillow>=10", "cbor2>=5.6"]
+wis2 = ["paho-mqtt>=2.1"]
+all = ["eccodes>=1.6", "netCDF4>=1.6", "sgp4>=2.23", "rasterio>=1.3", "Pillow>=10", "cbor2>=5.6", "paho-mqtt>=2.1"]
 test = ["pytest>=8", "httpx>=0.27"]
 
 [project.scripts]
 satprof = "satprof_calibrator.cli:main"
 satprof-web = "satprof_calibrator.web.app:main"
 satprof-worker = "satprof_calibrator.worker:main"
+satprof-wis2 = "satprof_calibrator.sources.wis2:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

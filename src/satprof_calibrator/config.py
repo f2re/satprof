@@ -15,7 +15,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "stale_job_minutes": 60,
         "max_attempts": 3,
         "schedules": {
-            "sync_soundings": 1800,
+            "sync_soundings": 900,
             "scan_satdump": 60,
             "sync_tle": 21600,
             "update_statistics": 86400,
@@ -32,6 +32,25 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "inbox": "inbox/satdump",
         "output": "satdump-output",
         "manifest_glob": "*.satprof.json",
+    },
+    "sources": {
+        "wis2": {
+            "enabled": False,
+            "broker": "mqtts://everyone:everyone@wis2broker.globaldata.nws.noaa.gov:8883",
+            "username_env": "SATPROF_WIS2_USERNAME",
+            "password_env": "SATPROF_WIS2_PASSWORD",
+            "topics": ["cache/a/wis2/+/data/core/weather/surface-based-observations/temp/#"],
+            "download_dir": "inbox/wis2",
+            "file_globs": ["*.bufr", "*.bufr4", "*.bin"],
+            "media_types": ["application/bufr", "application/x-bufr", "application/octet-stream"],
+            "qos": 1,
+            "keepalive": 60,
+            "verify_tls": True,
+            "require_bufr_magic": True,
+            "download_timeout_seconds": 90,
+            "max_download_bytes": 134217728,
+            "enqueue_sync": True,
+        }
     },
     "satellites": [
         {"name": "Метеор-М №2-3", "norad_id": 57166, "family": "meteor", "color": "#0b63ce"},

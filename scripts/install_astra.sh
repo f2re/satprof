@@ -13,7 +13,7 @@ if sys.version_info < (3, 10):
 PY
 
 sudo apt-get update
-sudo apt-get install -y python3-venv python3-dev build-essential libeccodes0 libeccodes-dev libeccodes-tools rsync
+sudo apt-get install -y python3-venv python3-dev build-essential libeccodes0 libeccodes-dev libeccodes-tools rsync ca-certificates
 sudo useradd --system --home "$PREFIX" --shell /usr/sbin/nologin satprof 2>/dev/null || true
 sudo install -d -o satprof -g satprof "$PREFIX" "$WORKSPACE"
 sudo install -d -o root -g root "$CONFIG_DIR"
@@ -26,8 +26,14 @@ if [[ ! -f "$CONFIG_DIR/config.yaml" ]]; then
 fi
 sudo sed -i "s|^workspace:.*|workspace: $WORKSPACE|" "$CONFIG_DIR/config.yaml"
 sudo cp "$PREFIX/systemd/satprof.env.example" "$CONFIG_DIR/satprof.env"
+sudo chmod 0640 "$CONFIG_DIR/satprof.env"
 sudo sed -i "s|SATPROF_CONFIG=.*|SATPROF_CONFIG=$CONFIG_DIR/config.yaml|" "$CONFIG_DIR/satprof.env"
-sudo cp "$PREFIX/systemd/satprof-web.service" "$PREFIX/systemd/satprof-worker.service" /etc/systemd/system/
+sudo cp \
+  "$PREFIX/systemd/satprof-web.service" \
+  "$PREFIX/systemd/satprof-worker.service" \
+  "$PREFIX/systemd/satprof-wis2.service" \
+  /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now satprof-worker.service satprof-web.service
 printf 'SatProf установлен. Откройте http://127.0.0.1:8088\n'
+printf 'WIS2 установлен, но не включён. После настройки: sudo systemctl enable --now satprof-wis2.service\n'

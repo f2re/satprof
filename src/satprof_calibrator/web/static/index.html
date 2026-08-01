@@ -7,77 +7,44 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.6.1/ol.css">
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/source-status.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark">SP</span>
-      <div><strong>SatProf</strong><span>Калибровка и профили атмосферы</span></div>
-    </div>
-    <div class="top-actions">
-      <span id="healthBadge" class="status-pill muted">Проверка системы…</span>
-      <button id="refreshButton" class="button secondary">Обновить</button>
-    </div>
+    <div class="brand"><span class="brand-mark">SP</span><div><strong>SatProf</strong><span>Калибровка и профили атмосферы</span></div></div>
+    <div class="top-actions"><span id="healthBadge" class="status-pill muted">Проверка системы…</span><button id="refreshButton" class="button secondary">Обновить</button></div>
   </header>
-
   <main class="layout">
     <section class="map-panel">
       <div id="map" aria-label="Карта спутниковых пролётов и гранул"></div>
       <div class="map-toolbar panel-glass">
-        <label>Прибор
-          <select id="instrumentFilter">
-            <option value="">Все</option>
-            <option value="mtvza_gy">МТВЗА-ГЯ</option>
-            <option value="ikfs2">ИКФС-2</option>
-            <option value="msugs">МСУ-ГС</option>
-          </select>
-        </label>
+        <label>Прибор<select id="instrumentFilter"><option value="">Все</option><option value="mtvza_gy">МТВЗА-ГЯ</option><option value="ikfs2">ИКФС-2</option><option value="msugs">МСУ-ГС</option></select></label>
         <label class="switch"><input id="showTracks" type="checkbox" checked><span>Орбиты</span></label>
         <label class="switch"><input id="showGranules" type="checkbox" checked><span>Гранулы</span></label>
       </div>
       <div class="map-hint panel-glass">Нажмите в пределах полосы наблюдения, чтобы восстановить профиль</div>
       <div id="mapError" class="map-error hidden"></div>
     </section>
-
     <aside class="sidebar">
       <section class="card selection-card">
-        <div class="card-heading">
-          <div><span class="eyebrow">Выбранная точка</span><h1 id="pointTitle">Точка не выбрана</h1></div>
-          <span id="distanceBadge" class="metric-badge hidden"></span>
-        </div>
+        <div class="card-heading"><div><span class="eyebrow">Выбранная точка</span><h1 id="pointTitle">Точка не выбрана</h1></div><span id="distanceBadge" class="metric-badge hidden"></span></div>
         <p id="selectionHelp" class="muted-text">Выберите точку на карте. SatProf найдёт ближайшее поле зрения и применит модель соответствующего прибора.</p>
-        <div id="selectionMeta" class="meta-grid hidden"></div>
-        <div id="profileLoading" class="loading hidden"><span></span>Восстановление профиля…</div>
-        <div id="profileError" class="notice error hidden"></div>
+        <div id="selectionMeta" class="meta-grid hidden"></div><div id="profileLoading" class="loading hidden"><span></span>Восстановление профиля…</div><div id="profileError" class="notice error hidden"></div>
       </section>
-
       <section id="profileCard" class="card hidden">
-        <div class="card-heading">
-          <div><span class="eyebrow">Вертикальный профиль</span><h2>Температура и влажность</h2></div>
-          <button id="downloadProfile" class="icon-button" title="Сохранить JSON">⇩</button>
-        </div>
+        <div class="card-heading"><div><span class="eyebrow">Вертикальный профиль</span><h2>Температура и влажность</h2></div><button id="downloadProfile" class="icon-button" title="Сохранить JSON">⇩</button></div>
         <div class="chart-legend"><span class="temp-dot"></span>Температура, °C <span class="rh-dot"></span>Отн. влажность, %</div>
-        <svg id="profileChart" viewBox="0 0 540 400" role="img" aria-label="Вертикальный профиль"></svg>
-        <div id="modelInfo" class="model-info"></div>
-        <div id="profileWarnings"></div>
+        <svg id="profileChart" viewBox="0 0 540 400" role="img" aria-label="Вертикальный профиль"></svg><div id="modelInfo" class="model-info"></div><div id="profileWarnings"></div>
       </section>
-
       <section class="card system-card">
         <div class="card-heading"><div><span class="eyebrow">Фоновая обработка</span><h2>Состояние системы</h2></div></div>
-        <div id="counters" class="counter-grid"></div>
-        <div class="quick-actions">
-          <button data-job="source.sync" class="button secondary">Загрузить зонды</button>
-          <button data-job="satdump.scan" class="button secondary">Проверить SatDump</button>
-          <button data-job="tle.sync" class="button secondary">Обновить TLE</button>
-          <button data-job="calibration.train" class="button primary">Пересчитать калибровку</button>
-        </div>
-        <div class="jobs-title">Последние задания</div>
-        <div id="jobsList" class="jobs-list"></div>
+        <div id="counters" class="counter-grid"></div><div id="sourceStatus" class="source-status" aria-live="polite"></div>
+        <div class="quick-actions"><button data-job="source.sync" class="button secondary">Загрузить зонды</button><button data-job="satdump.scan" class="button secondary">Проверить SatDump</button><button data-job="tle.sync" class="button secondary">Обновить TLE</button><button data-job="calibration.train" class="button primary">Пересчитать калибровку</button></div>
+        <div class="jobs-title">Последние задания</div><div id="jobsList" class="jobs-list"></div>
       </section>
     </aside>
   </main>
-
   <script src="https://cdn.jsdelivr.net/npm/ol@10.6.1/dist/ol.js"></script>
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js" defer></script><script src="/static/source-status.js" defer></script>
 </body>
 </html>

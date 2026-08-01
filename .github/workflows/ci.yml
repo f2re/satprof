@@ -15,7 +15,7 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Установка
-        run: pip install --no-build-isolation -e ".[test]"
+        run: pip install --no-build-isolation -e ".[test,wis2]"
       - name: Python tests
         run: pytest -q
       - name: Python syntax
@@ -24,4 +24,6 @@ jobs:
         with:
           node-version: "20"
       - name: JavaScript syntax
-        run: node --check src/satprof_calibrator/web/static/app.js
+        run: |
+          node --check src/satprof_calibrator/web/static/app.js
+          node --check src/satprof_calibrator/web/static/source-status.js
