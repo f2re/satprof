@@ -1,0 +1,80 @@
+# Пример автоматического наблюдения за каталогами приёмной станции.
+# Скопируйте нужные элементы в satdump.watch_profiles основного config.yaml.
+
+satdump:
+  watch_profiles:
+    # Кадры X-band Метеор-М с МТВЗА-ГЯ.
+    - name: meteor-m2-4-mtvza-xband
+      enabled: true
+      root: /data/receiver/meteor-m2-4/xband
+      glob: "*.cadu"
+      recursive: false
+      min_age_seconds: 45
+      min_size_bytes: 1048576
+      pipeline: meteor_m2x_xband
+      input_level: cadu
+      instrument: mtvza_gy
+      satellite: METEOR-M2-4
+      output_name_prefix: meteor-m2-4-mtvza
+      extra_args: []
+      reader:
+        type: auto
+        product_glob:
+          - "**/MTVZA/product.cbor"
+        # 1 сохраняет каждый пиксель. Для первичного накопления можно 2–4.
+        stride: 1
+        require_calibrated: false
+
+    # Пример готового потока кадров ИКФС-2.
+    - name: meteor-m2-4-ikfs2
+      enabled: false
+      root: /data/receiver/meteor-m2-4/ikfs2
+      glob: "*.cadu"
+      recursive: false
+      min_age_seconds: 60
+      min_size_bytes: 1048576
+      pipeline: REPLACE_WITH_VERIFIED_IKFS2_PIPELINE
+      input_level: cadu
+      instrument: ikfs2
+      satellite: METEOR-M2-4
+      output_name_prefix: meteor-m2-4-ikfs2
+      reader:
+        type: auto
+        product_glob:
+          - "**/IKFS-2/product.cbor"
+          - "**/IKFS2/product.cbor"
+        stride: 1
+        require_calibrated: true
+
+    # Пример каталога HRIT/LRIT Электро-Л после формирования входного файла
+    # конкретным приёмным трактом. Pipeline нужно подтвердить на станции.
+    - name: elektro-l4-msugs
+      enabled: false
+      root: /data/receiver/elektro-l4
+      glob: "*.bin"
+      recursive: false
+      min_age_seconds: 60
+      min_size_bytes: 1048576
+      pipeline: REPLACE_WITH_VERIFIED_ELEKTRO_PIPELINE
+      input_level: frames
+      instrument: msugs
+      satellite: ELECTRO-L4
+      output_name_prefix: elektro-l4-msugs
+      reader:
+        type: auto
+        product_glob:
+          - "**/MSU-GS/product.cbor"
+          - "**/MSUGS/product.cbor"
+        channels: [6]
+        stride: 1
+        require_calibrated: true
+
+# Пороговые значения первой викарной калибровки count → TB.
+radiometric:
+  min_pairs_per_channel: 80
+  min_independent_soundings: 40
+  validation_fraction: 0.20
+  huber_epsilon: 1.35
+  max_validation_rmse_k: 4.0
+  max_abs_validation_bias_k: 0.5
+  min_production_channels: 1
