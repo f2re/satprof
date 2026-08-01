@@ -21,7 +21,7 @@ def test_web_health_monitoring_and_enqueue(tmp_path):
     client = TestClient(create_app(cfg=cfg))
     health = client.get("/api/v1/health")
     assert health.status_code == 200
-    assert health.json()["version"] == "0.5.0"
+    assert health.json()["version"] == "0.6.0"
     assert client.get("/health/live").status_code == 200
     monitoring = client.get("/api/v1/monitoring")
     assert monitoring.status_code == 200
