@@ -1,54 +1,61 @@
-# 🛰️ SatProf
+# 🛰️ SatProf 0.6
 
-**SatProf 0.5** — автономная система внешней калибровки спутниковых радиаций по радиозондам, восстановления вертикальных профилей атмосферы и подготовки наблюдений для WRFDA.
+**SatProf** — автономная система калибровки спутниковых измерений по радиозондам, восстановления вертикальных профилей атмосферы и подготовки наблюдений для WRFDA.
 
 ```text
-SatDump release/1.2.2 → физический Level‑1C → RTTOV → O−B
-                              ↑                ↓
-                     DWD / WIS2 / IGRA     поправки и дрейф
-                                               ↓
-                               профиль T / q / RH + WRFDA
+приёмный поток → SatDump release/1.2.2 → физический Level‑1C
+                                             │
+WIS2 / DWD / IGRA → радиозонд → RTTOV ───────┤
+                                             ↓
+                         count→TB → O−B → bias → T/q/RH → WRFDA
 ```
 
-Система рассчитана на непрерывную работу без Docker на Debian и Astra Linux: отдельный worker обрабатывает данные и обучает модели, WIS2-подписчик получает оперативные TEMP, а FastAPI/OpenLayers предоставляет карту спутников, гранул и восстановленных профилей.
+Система рассчитана на непрерывную работу без Docker на Debian и Astra Linux 1.6/1.7.
 
-## ✨ Что реализовано
+## ✨ Реализовано
 
-- 📡 интеграция с [`f2re/SatDump`](https://github.com/f2re/SatDump/tree/release/1.2.2), строго ветка `release/1.2.2`;
-- 🧪 импорт физических Level‑1C NetCDF и калиброванных стеков GeoTIFF;
-- 🎈 загрузка TEMP BUFR из DWD и непрерывная MQTT(S)-подписка WIS 2.0;
-- 🗄️ исторические профили NOAA IGRA и адаптеры GRUAN/Росгидромета;
-- 🧭 траектория шара и четырёхмерная коллокация спутник–зонд;
-- 🌡️ RTTOV/PyRTTOV, расчёт `TBрасч`, O−B и полной ошибки пары;
-- 📐 робастные поканальные поправки по скану, углу, поверхности, орбите и сезону;
-- 📈 контроль временного дрейфа, суточная статистика и предупреждения;
-- 🧠 восстановление `T(p)`, `q(p)`, `RH(p)` методом PCA + Ridge и каркас 1D‑Var;
-- 🗺️ OpenLayers-карта спутников, орбит, гранул и выбора точки профиля;
-- ⚙️ постоянная SQLite-очередь с дедупликацией, повторными попытками и восстановлением;
-- 📦 NetCDF-экспорт скорректированных радиаций для собственного считывателя WRFDA;
-- 🛡️ systemd-службы, атомарная загрузка и проверка контрольных сумм;
-- 🩺 readiness/liveness, Prometheus-метрики и глубокий systemd-мониторинг;
+- 📡 строгая связка с [`f2re/SatDump:release/1.2.2`](https://github.com/f2re/SatDump/tree/release/1.2.2);
+- 🧪 встроенная команда SatDump `level1c` для количественного экспорта `product.cbor`;
+- 🔢 сохранение исходных цифровых счётов без потерь;
+- 🌡️ экспорт яркостных температур только при наличии реального калибратора;
+- 🧭 широта, долгота, время, положение в скане и спутниковый зенитный угол;
+- 🔐 проверка размерностей, единиц, путей, числа байт и CRC32 каждого массива;
+- 👁️ автоматическое наблюдение каталогов приёмной станции;
+- 🎈 оперативные TEMP BUFR через WIS 2.0 и DWD, история NOAA IGRA;
+- 📐 четырёхмерная коллокация спутник–радиозонд с учётом дрейфа шара;
+- 🌍 RTTOV/PyRTTOV, расчёт `TBрасч`, O−B и полной ошибки пары;
+- 📈 викарная модель `raw count → TB`, остаточные поправки и контроль дрейфа;
+- 🧠 восстановление `T(p)`, `q(p)`, `RH(p)` и каркас 1D‑Var;
+- 🗺️ FastAPI/OpenLayers: спутники, орбиты, гранулы и выбор точки профиля;
+- ⚙️ постоянная SQLite-очередь, дедупликация, повторные попытки и восстановление;
+- 🩺 readiness/liveness, Prometheus-метрики и systemd-мониторинг;
 - 🚀 версионированное развёртывание с автоматическим откатом;
-- 📦 нативные офлайн-бандлы для Astra Linux 1.6/1.7.
+- 📦 нативный офлайн-бандл для Astra Linux 1.6/1.7.
 
-## ⚠️ Физическое ограничение
+## ⚠️ Научная честность данных
 
-SatProf не извлекает радиометрию из PNG/JPEG и оформленных композитов SatDump. Для калибровки необходимы:
+SatProf не получает радиометрию из PNG/JPEG и оформленных композитов.
 
-- яркостные температуры Level‑1C с геопривязкой, временем и геометрией каждого поля зрения; либо
-- многослойный GeoTIFF, где каждый слой является физическим каналом в K и описан манифестом.
+Поддерживаются три состояния:
 
-Обычный LRPT «Метеор‑М» не содержит полноценный профильный поток МТВЗА‑ГЯ/ИКФС‑2. Требуется соответствующий HRPT/X-band либо официальный Level‑1C.
+| Состояние | Содержание |
+|---|---|
+| `calibrated` | SatDump выдал физические яркостные температуры |
+| `partial` | TB доступна только для части каналов |
+| `raw_counts` | сохранены только исходные цифровые отсчёты |
+| `vicarious_calibrated` | SatProf построил проверенную модель `count→TB` |
+
+Текущий декодер МТВЗА‑ГЯ в SatDump сохраняет исходные 16-битные отсчёты, но не имеет штатной абсолютной калибровки всех каналов. Поэтому такие данные маркируются как `raw_counts`, а не как кельвины. После накопления коллокаций SatProf обучает отдельную модель по целевым TB, рассчитанным RTTOV из радиозонда.
 
 ## 🚀 Быстрый запуск
 
-### 1. SatDump 1.2.2
+### 1. Установить SatDump
 
 ```bash
 git clone --branch release/1.2.2 \
   https://github.com/f2re/SatDump.git /opt/SatDump
-cd /opt/SatDump
 
+cd /opt/SatDump
 bash scripts/astra/install-deps.sh \
   --profile headless \
   --bootstrap-missing
@@ -57,11 +64,15 @@ bash scripts/astra/build.sh \
   --profile headless \
   --clean \
   --install
-
-bash scripts/astra/run.sh -- version
 ```
 
-### 2. SatProf
+Проверка нового экспортёра:
+
+```bash
+bash scripts/astra/run.sh -- level1c --help
+```
+
+### 2. Установить SatProf
 
 ```bash
 git clone https://github.com/f2re/satprof.git /opt/satprof
@@ -69,31 +80,40 @@ cd /opt/satprof
 bash scripts/install.sh
 ```
 
-Для Astra Linux 1.6/1.7 весь цикл выполняется одной командой:
+На Astra Linux полный цикл:
 
 ```bash
 bash scripts/install_astra.sh --satdump-install-deps
 ```
 
-Установщик проверяет платформу, при необходимости собирает локальный CPython 3.11, получает строго `f2re/SatDump:release/1.2.2`, собирает SatDump в versioned prefix, создаёт неизменяемый release SatProf, запускает тесты, переключает symlink и проверяет `/health/ready`. При неуспехе выполняется автоматический откат.
+Установщик:
 
-### 3. Настройка
+1. проверяет Astra Linux и архитектуру;
+2. при необходимости собирает изолированный CPython 3.11;
+3. получает строго ветку SatDump `release/1.2.2`;
+4. собирает SatDump в версионный prefix;
+5. создаёт неизменяемый release SatProf;
+6. выполняет тесты;
+7. переключает символьные ссылки;
+8. проверяет `/health/ready`;
+9. при ошибке возвращает предыдущую версию.
+
+## 🔧 Минимальная конфигурация
 
 ```bash
 cp config/config.example.yaml config/config.yaml
 nano config/config.yaml
 ```
 
-Минимум:
-
 ```yaml
 workspace: /opt/satprof/workspace
 
 satdump:
   root: /opt/SatDump
+  repository: https://github.com/f2re/SatDump
   required_branch: release/1.2.2
   install_prefix: /opt/satdump/current
-  # expected_commit: полный SHA для жёсткого закрепления
+  # expected_commit: ПОЛНЫЙ_SHA_ПРОВЕРЕННОЙ_СБОРКИ
 
 instruments:
   mtvza_gy:
@@ -108,7 +128,7 @@ instruments:
 .venv/bin/satprof sync-tle --config config/config.yaml
 ```
 
-### 4. Запуск
+Запуск:
 
 ```bash
 .venv/bin/satprof-worker --config config/config.yaml
@@ -118,145 +138,137 @@ instruments:
 .venv/bin/satprof-web --config config/config.yaml
 ```
 
-Откройте `http://127.0.0.1:8088`.
+Интерфейс: `http://127.0.0.1:8088`.
 
-Для разработки:
+## 📡 Автоматический приём спутниковых файлов
 
-```bash
-bash scripts/run-dev.sh
-```
+Готовые профили находятся в [`config/watch_profiles.example.yaml`](config/watch_profiles.example.yaml).
 
-## 🌐 Оперативные TEMP через WIS 2.0
-
-SatProf содержит нативный MQTT v5-клиент WIS2. Он:
-
-1. подписывается на один или несколько WIS2 topic;
-2. разбирает WIS2 Notification Message;
-3. принимает inline-content либо загружает canonical/update URL;
-4. проверяет объявленную SHA-2/SHA-3 сумму;
-5. проверяет сигнатуру `BUFR`;
-6. сохраняет файл и JSON-паспорт атомарно;
-7. дедуплицирует сообщения разных Global Cache по `properties.data_id`;
-8. ставит `source.sync` в очередь;
-9. обрабатывает update/deletion без накопления устаревших файлов.
-
-Настройка:
+Пример для X-band Метеор‑М:
 
 ```yaml
-sources:
-  wis2:
-    enabled: true
-    broker: mqtts://everyone:everyone@wis2broker.globaldata.nws.noaa.gov:8883
-    topics:
-      - cache/a/wis2/+/data/core/weather/surface-based-observations/temp/#
-    download_dir: inbox/wis2
-    qos: 1
-    verify_tls: true
-    require_bufr_magic: true
+satdump:
+  watch_profiles:
+    - name: meteor-m2-4-mtvza-xband
+      enabled: true
+      root: /data/receiver/meteor-m2-4/xband
+      glob: "*.cadu"
+      min_age_seconds: 45
+      min_size_bytes: 1048576
+      pipeline: meteor_m2x_xband
+      input_level: cadu
+      instrument: mtvza_gy
+      satellite: METEOR-M2-4
+      reader:
+        type: auto
+        product_glob:
+          - "**/MTVZA/product.cbor"
+        stride: 1
 ```
 
-Пароль можно не хранить в YAML:
+Worker автоматически:
 
-```bash
-export SATPROF_WIS2_USERNAME=everyone
-export SATPROF_WIS2_PASSWORD=everyone
-```
+1. ждёт стабилизации размера/возраста файла;
+2. рассчитывает SHA‑256;
+3. создаёт детерминированный манифест;
+4. запускает pipeline SatDump;
+5. находит `product.cbor` требуемого прибора;
+6. запускает `satdump level1c`;
+7. проверяет и импортирует массивы;
+8. ставит расчёт коллокаций в очередь;
+9. переносит обработанный манифест в `processed/`.
 
-После настройки:
+Подробно: [`docs/LEVEL1C_PIPELINE.md`](docs/LEVEL1C_PIPELINE.md).
 
-```bash
-sudo systemctl enable --now satprof-wis2.service
-journalctl -u satprof-wis2 -f
-```
-
-Подробно: [docs/WIS2.md](docs/WIS2.md).
-
-## 📡 Связка с SatDump
-
-Манифест и входная запись помещаются в:
+## 🧪 Формат бинарного Level‑1C
 
 ```text
-workspace/inbox/satdump/
+satprof-level1c/
+├── satprof-level1c-index.json
+└── group-1-200xNNN/
+    ├── satprof-level1c.json
+    ├── raw_counts.u16
+    ├── brightness_temperature.f32
+    ├── latitude.f32
+    ├── longitude.f32
+    ├── observation_time.f64
+    ├── scan_position.f32
+    ├── satellite_zenith.f32
+    ├── quality_flag.u16
+    ├── source_x.u32
+    └── source_y.u32
 ```
 
-Пример: [`examples/satdump/meteor-m2-4-lrpt.satprof.json`](examples/satdump/meteor-m2-4-lrpt.satprof.json).
+Формат не требует NetCDF и пригоден для закрытого контура Astra Linux. Для каждого массива указаны `dtype`, little-endian, shape, units, bytes и CRC32.
 
-Worker выполняет SatDump через явно заданный prefix:
+## 📐 Викарная калибровка `count → TB`
 
 ```text
-bash /opt/SatDump/scripts/astra/run.sh \
-  --prefix /opt/satdump/current -- \
-  PIPELINE INPUT_LEVEL INPUT OUTPUT [OPTIONS]
+raw count + scan + sec(θ)
+            ↓
+робастная поканальная модель
+            ↓
+TB, рассчитанная RTTOV по радиозонду
 ```
 
-Перед каждым запуском проверяются ветка, commit, marker установки, бинарник, ресурсы, pipelines и команда `version`. Обработка защищена файловой блокировкой, выполняется в `.partial`, успешный каталог переключается атомарно, предыдущий результат архивируется, а состояние запуска сохраняется в `workspace/monitoring/satdump/`.
+Обучение разделяется по независимым запускам радиозонда и по времени. Для каждого канала контролируются:
 
-Подробно: [docs/SATDUMP_INTEGRATION.md](docs/SATDUMP_INTEGRATION.md).
+- число пар и независимых запусков;
+- диапазон raw counts;
+- RMSE и bias на отложенном периоде;
+- переносимость по позиции скана;
+- физический диапазон полученной TB.
 
-## 🎈 Источники зондирования
+После статуса `production` модель применяется к ранее накопленным гранулам. Затем система повторно формирует O−B и рассчитывает остаточную bias-модель.
 
-| Источник | Назначение | Состояние |
-|---|---|---|
-| [WIS 2.0](https://community.wmo.int/en/activity-areas/wis) | оперативный международный поток | MQTT(S), WNM, HTTP/inline, SHA, update/delete |
-| [DWD Open Data](https://opendata.dwd.de/weather/weather_reports/radiosonde/bufr/) | открытый резервный TEMP BUFR | автоматическая загрузка и ecCodes |
-| [NOAA IGRA](https://www.ncei.noaa.gov/products/weather-balloon/integrated-global-radiosonde-archive) | история и дозаполнение | постанционные архивы |
-| [GRUAN](https://www.gruan.org/) | метрологическая валидация | NetCDF с неопределённостями |
-| [ЕИП Росгидромета](https://eip.meteo.ru/opendata) | региональное дополнение | настраиваемый CSV-адаптер |
+## 🌐 Радиозонды
+
+| Источник | Назначение |
+|---|---|
+| WIS 2.0 | основной оперативный международный поток |
+| DWD Open Data | открытый резервный TEMP BUFR |
+| NOAA IGRA | история и дозаполнение |
+| GRUAN | метрологическая валидация |
+| ЕИП Росгидромета | региональное дополнение |
 
 Радиозонд сравнивается со спутником только через радиационный оператор:
 
 ```text
-профиль зонда + поверхность + геометрия → RTTOV → TBрасч
-O−B = TBнабл − TBрасч
+профиль + поверхность + геометрия → RTTOV → TBрасч
 ```
+
+Подробно: [`docs/WIS2.md`](docs/WIS2.md) и [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md).
 
 ## 🗺️ Веб-интерфейс
 
 OpenLayers показывает:
 
-- спутники «Метеор‑М» и «Электро‑Л»;
-- траектории по TLE/SGP4;
-- контуры доступных Level‑1C;
+- текущие положения «Метеор‑М» и «Электро‑Л»;
+- орбиты по TLE/SGP4;
+- контуры Level‑1C-гранул;
 - выбранную точку и ближайшее поле зрения;
-- `T`, `q`, `RH` на изобарических уровнях;
-- статус worker, очереди, моделей, DWD/IGRA/WIS2;
-- время последнего WIS2-сообщения и число принятых файлов.
+- восстановленные `T`, `q`, `RH`;
+- состояние SatDump, WIS2, DWD, IGRA, очереди и моделей.
 
-Профиль не создаётся, если нет реальной гранулы или зарегистрированной модели. Вместо вымышленного результата API возвращает диагностический код.
-
-## ⚙️ Фоновые процессы
-
-| Процесс/задание | Назначение |
-|---|---|
-| `satprof-wis2` | постоянная MQTT(S)-подписка |
-| `source.sync` | разобрать WIS2/DWD/IGRA и выполнить QC |
-| `tle.sync` | обновить орбитальные элементы |
-| `satdump.scan` | найти новые манифесты |
-| `satdump.process` | запустить SatDump и импортировать Level‑1C |
-| `instrument.refresh` | коллокация, RTTOV и O−B |
-| `statistics.update` | статистика и предупреждения |
-| `calibration.train` | поправки и модель профиля |
-
-Ручной запуск:
-
-```bash
-.venv/bin/satprof enqueue source.sync --config config/config.yaml
-.venv/bin/satprof enqueue satdump.scan --config config/config.yaml
-.venv/bin/satprof jobs --config config/config.yaml
-```
-
-Ошибка отдельного BUFR, DWD или одной станции IGRA записывается в события и не прерывает обработку остальных источников.
-
+Профиль не создаётся, если отсутствует реальная гранула или подходящая модель.
 
 ## 🩺 Мониторинг
 
-SatProf контролирует не только факт работы HTTP-процесса, но и готовность всей цепочки:
+```http
+GET /health/live
+GET /health/ready
+GET /health/ready?deep=true
+GET /metrics
+```
 
-- доступность и целостность SQLite;
-- свободное место и права записи Workspace;
-- очередь, зависшие и ошибочные задания;
+Глубокий контроль проверяет:
+
+- SQLite `quick_check`;
+- права и свободное место Workspace;
+- возраст и состояние очереди;
 - свежесть зондов, гранул, коллокаций и моделей;
-- исходники, branch/commit и установленный runtime SatDump;
+- ветку, commit и runtime SatDump;
+- `satdump version` и `satdump level1c --help`;
 - наличие коэффициентов RTTOV.
 
 ```bash
@@ -265,48 +277,30 @@ SatProf контролирует не только факт работы HTTP-п
   --deep --write-snapshot
 ```
 
-HTTP-контроль:
-
-```bash
-curl -fsS http://127.0.0.1:8088/health/live
-curl -fsS http://127.0.0.1:8088/health/ready
-curl -fsS http://127.0.0.1:8088/metrics
-```
-
-`satprof-monitor.timer` выполняет глубокую проверку каждые пять минут. Формат `/metrics` совместим с Prometheus text exposition.
-
-## 🚀 Развёртывание и откат
-
-```bash
-bash scripts/astra/deploy.sh --source "$PWD"
-```
-
-Каждый релиз размещается в `/opt/satprof/.releases/<UTC>-<SHA>`. Новая venv создаётся отдельно, затем выполняются `pytest`, `compileall`, JavaScript-проверки, установка unit-файлов и атомарное переключение `/opt/satprof/current` и `/opt/satprof/.venv`. Существующая БД, Workspace и `/etc/satprof/config.yaml` не заменяются.
-
-Ручной откат:
-
-```bash
-bash scripts/astra/rollback.sh
-# либо
-bash scripts/astra/rollback.sh --to 20260801T180000Z-abcdef123456
-```
-
-Обновление исходников и безопасный deploy:
+## 🚀 Обновление и откат
 
 ```bash
 bash scripts/update.sh
 bash scripts/update.sh --with-satdump
 ```
 
-## 📦 Офлайн-бандл Astra
+Релизы размещаются в `/opt/satprof/.releases/`. Конфигурация, Workspace и база данных не заменяются.
 
-Бандл следует собирать на той же линии Astra и архитектуре, где он будет установлен:
+Откат:
+
+```bash
+bash /opt/satprof/current/scripts/astra/rollback.sh
+```
+
+## 📦 Офлайн-бандл
+
+На машине с той же версией Astra:
 
 ```bash
 bash scripts/astra/build-offline-bundle.sh --output dist
 ```
 
-В архив входят нативный Python wheelhouse, исходники SatProf, manifest, SHA256SUMS и, по умолчанию, исходники и установленный runtime SatDump. На закрытой машине:
+На закрытой машине:
 
 ```bash
 tar -xzf satprof-offline-*.tar.gz
@@ -314,100 +308,34 @@ cd satprof-offline-*
 bash install.sh
 ```
 
-Подробно: [развёртывание под Astra](docs/ASTRA_DEPLOYMENT.md) и [мониторинг](docs/MONITORING.md).
+Бандл содержит wheelhouse Python, Git bundle SatDump, собранный runtime, SHA256SUMS и сценарий установки.
 
-## 🔌 API
-
-```text
-GET  /health/live
-GET  /health/ready
-GET  /metrics
-GET  /api/v1/health
-GET  /api/v1/status
-GET  /api/v1/monitoring
-GET  /api/v1/sources
-GET  /api/v1/satellites
-GET  /api/v1/granules
-POST /api/v1/profile/retrieve
-GET  /api/v1/jobs
-POST /api/v1/jobs
-POST /api/v1/satdump/process
-GET  /api/v1/models
-```
-
-OpenAPI: `http://host:8088/docs`.
-
-## 🧪 Проверка
+## ✅ Проверка разработки
 
 ```bash
 PYTHONPATH=src pytest -q
 python -m compileall -q src
-node --check src/satprof_calibrator/web/static/app.js
-node --check src/satprof_calibrator/web/static/source-status.js
-node --check src/satprof_calibrator/web/static/monitoring-status.js
-find scripts -name '*.sh' -print0 | xargs -0 -n1 bash -n
+find src/satprof_calibrator/web/static -name '*.js' -print0 \
+  | xargs -0 -n1 node --check
+find scripts -name '*.sh' -print0 \
+  | xargs -0 -n1 bash -n
 ```
 
-Демонстрационный цикл:
-
-```bash
-.venv/bin/satprof demo --workspace /tmp/satprof-demo --soundings 120
-.venv/bin/satprof-web --workspace /tmp/satprof-demo
-```
-
-Синтетическая демонстрация проверяет программную цепочку, но не характеризует реальную точность прибора.
-
-## 🖥️ systemd
-
-```bash
-sudo cp systemd/satprof-*.service systemd/satprof-*.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now satprof-worker.service satprof-web.service satprof-monitor.timer
-```
-
-После включения `sources.wis2.enabled`:
-
-```bash
-sudo systemctl enable --now satprof-wis2.service
-```
-
-Диагностика:
-
-```bash
-journalctl -u satprof-worker -f
-journalctl -u satprof-wis2 -f
-curl -s http://127.0.0.1:8088/api/v1/health | python -m json.tool
-curl -s http://127.0.0.1:8088/api/v1/sources | python -m json.tool
-curl -s http://127.0.0.1:8088/api/v1/monitoring | python -m json.tool
-systemctl list-timers satprof-monitor.timer
-```
+Нативная сборка SatDump и офлайн-бандла проверяются self-hosted runner-ами с метками `astra-1.6` и `astra-1.7`.
 
 ## 📚 Документация
 
 - [Архитектура](docs/ARCHITECTURE.md)
-- [WIS 2.0](docs/WIS2.md)
-- [Источники данных](docs/DATA_SOURCES.md)
+- [Автоматический Level‑1C](docs/LEVEL1C_PIPELINE.md)
 - [Интеграция SatDump](docs/SATDUMP_INTEGRATION.md)
 - [Методика калибровки](docs/CALIBRATION_METHOD.md)
+- [Источники данных](docs/DATA_SOURCES.md)
+- [WIS 2.0](docs/WIS2.md)
 - [Веб-интерфейс](docs/WEB_UI.md)
-- [Эксплуатация](docs/OPERATIONS.md)
-- [Astra Linux: сборка и развёртывание](docs/ASTRA_DEPLOYMENT.md)
 - [Мониторинг](docs/MONITORING.md)
-- [API](docs/API.md)
+- [Развёртывание Astra](docs/ASTRA_DEPLOYMENT.md)
 - [Валидация](docs/VALIDATION.md)
 
-## 🧰 Полезные ссылки
+## 📄 Лицензии
 
-- [SatDump release/1.2.2](https://github.com/f2re/SatDump/tree/release/1.2.2)
-- [WIS 2.0](https://community.wmo.int/en/activity-areas/wis)
-- [WIS2 Notification Message](https://wmo-im.github.io/wis2-notification-message/)
-- [OpenLayers](https://openlayers.org/)
-- [RTTOV / NWP SAF](https://nwp-saf.eumetsat.int/site/software/rttov/)
-- [NWP SAF 1D‑Var](https://nwp-saf.eumetsat.int/site/software/1d-var/)
-- [WRF/WRFDA](https://www2.mmm.ucar.edu/wrf/users/)
-- [NOAA IGRA](https://www.ncei.noaa.gov/products/weather-balloon/integrated-global-radiosonde-archive)
-- [GRUAN](https://www.gruan.org/)
-
-## 📄 Лицензия
-
-MIT. На SatDump, RTTOV и внешние данные распространяются их собственные лицензии и условия использования.
+Код SatProf распространяется по MIT. На SatDump, RTTOV и внешние данные действуют их собственные лицензии и условия использования.
