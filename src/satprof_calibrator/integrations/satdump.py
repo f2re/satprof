@@ -1,25 +1,21 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
-import fcntl
+from typing import Any
 import json
 import os
 import re
-import shutil
 import subprocess
-import uuid
+import time
 
 from .satdump_process import SatDumpProcessMixin
 from ..config import resolve_path
-from ..qc import check_satellite
-from ..satellite import read_generic_netcdf, read_geotiff_stack_manifest
 from ..storage import Workspace, sha256_file
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.:/+-]+$")
+_SAFE_FILENAME = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -38,6 +34,11 @@ def _read_key_value(path: Path) -> dict[str, str]:
         if separator:
             result[key.strip()] = value.strip()
     return result
+
+
+def _safe_name(value: str) -> str:
+    result = _SAFE_FILENAME.sub("-", value).strip("-.")
+    return result or "input"
 
 
 @dataclass
@@ -71,26 +72,16 @@ class SatDumpManifest:
             if not _SAFE_TOKEN.fullmatch(value):
                 raise ValueError(f"Недопустимое значение {label}: {value!r}")
         reader = dict(data.get("reader") or {})
-        reader.setdefault("type", "netcdf")
+        reader.setdefault("type", "auto")
         extra_args = [str(value) for value in data.get("extra_args", [])]
         if len(extra_args) > int(cfg.get("satdump", {}).get("max_extra_args", 64)):
             raise ValueError("Слишком много дополнительных аргументов SatDump")
-        return cls(
-            input_file=input_file,
-            pipeline=pipeline,
-            input_level=input_level,
-            instrument=str(data["instrument"]),
-            satellite=str(data.get("satellite", "unknown")),
-            samplerate=int(data["samplerate"]) if data.get("samplerate") is not None else None,
-            baseband_format=str(data["baseband_format"]) if data.get("baseband_format") else None,
-            extra_args=extra_args,
-            reader=reader,
-            output_name=data.get("output_name"),
-        )
+        return cls(input_file=input_file, pipeline=pipeline, input_level=input_level, instrument=str(data["instrument"]), satellite=str(data.get("satellite", "unknown")), samplerate=int(data["samplerate"]) if data.get("samplerate") is not None else None, baseband_format=str(data["baseband_format"]) if data.get("baseband_format") else None, extra_args=extra_args, reader=reader, output_name=data.get("output_name"))
 
 
 class SatDumpRunner(SatDumpProcessMixin):
     manifest_class = SatDumpManifest
+
     def __init__(self, workspace: Workspace, cfg: dict[str, Any]):
         self.workspace = workspace
         self.cfg = cfg
@@ -98,10 +89,7 @@ class SatDumpRunner(SatDumpProcessMixin):
         self.root = resolve_path(cfg, self.satdump_cfg.get("root", "/opt/SatDump"))
         self.runner = self.root / self.satdump_cfg.get("runner", "scripts/astra/run.sh")
         self.required_branch = str(self.satdump_cfg.get("required_branch", "release/1.2.2"))
-        self.install_prefix = resolve_path(
-            cfg,
-            self.satdump_cfg.get("install_prefix", "/opt/satdump/current"),
-        )
+        self.install_prefix = resolve_path(cfg, self.satdump_cfg.get("install_prefix", "/opt/satdump/current"))
         expected = self.satdump_cfg.get("expected_commit")
         self.expected_commit = str(expected).strip() if expected else None
 
@@ -109,14 +97,7 @@ class SatDumpRunner(SatDumpProcessMixin):
         if not (self.root / ".git").exists():
             return None
         try:
-            process = subprocess.run(
-                ["git", "-C", str(self.root), *args],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
+            process = subprocess.run(["git", "-C", str(self.root), *args], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=timeout, check=False)
         except (OSError, subprocess.SubprocessError):
             return None
         return process.stdout.strip() if process.returncode == 0 else None
@@ -130,7 +111,7 @@ class SatDumpRunner(SatDumpProcessMixin):
             return None
         text = head.read_text(encoding="utf-8", errors="replace").strip()
         prefix = "ref: refs/heads/"
-        return text[len(prefix) :] if text.startswith(prefix) else text[:12]
+        return text[len(prefix):] if text.startswith(prefix) else text[:12]
 
     def detect_commit(self) -> str | None:
         commit = self._git("rev-parse", "HEAD")
@@ -143,159 +124,107 @@ class SatDumpRunner(SatDumpProcessMixin):
         if not (self.root / ".git").exists():
             return None
         try:
-            result = subprocess.run(
-                ["git", "-C", str(self.root), "status", "--porcelain"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=10,
-                check=False,
-            )
+            result = subprocess.run(["git", "-C", str(self.root), "status", "--porcelain"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=10, check=False)
         except (OSError, subprocess.SubprocessError):
             return None
         return bool(result.stdout.strip()) if result.returncode == 0 else None
 
     def _runtime_paths(self) -> dict[str, Path]:
-        return {
-            "binary": self.install_prefix / "bin" / "satdump",
-            "resources": self.install_prefix / "share" / "satdump" / "resources",
-            "pipelines": self.install_prefix / "share" / "satdump" / "pipelines",
-            "config": self.install_prefix / "share" / "satdump" / "satdump_cfg.json",
-            "marker": self.install_prefix / ".satdump-install-root",
-        }
+        return {"binary": self.install_prefix / "bin" / "satdump", "resources": self.install_prefix / "share" / "satdump" / "resources", "pipelines": self.install_prefix / "share" / "satdump" / "pipelines", "config": self.install_prefix / "share" / "satdump" / "satdump_cfg.json", "marker": self.install_prefix / ".satdump-install-root"}
 
     def _runner_command(self, arguments: list[str]) -> list[str]:
-        return [
-            "bash",
-            str(self.runner),
-            "--prefix",
-            str(self.install_prefix),
-            "--",
-            *arguments,
-        ]
+        return ["bash", str(self.runner), "--prefix", str(self.install_prefix), "--", *arguments]
+
+    def _probe(self, arguments: list[str], timeout: int) -> dict[str, Any]:
+        command = self._runner_command(arguments)
+        started = datetime.now(timezone.utc)
+        try:
+            process = subprocess.run(command, cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout, check=False, env={**os.environ, "SATPROF_WORKSPACE": str(self.workspace.root)})
+            return {"ok": process.returncode == 0, "return_code": process.returncode, "command": command, "output": process.stdout[-8000:].strip(), "duration_seconds": (datetime.now(timezone.utc) - started).total_seconds()}
+        except subprocess.TimeoutExpired as exc:
+            return {"ok": False, "return_code": None, "command": command, "output": (exc.stdout or "")[-8000:] if isinstance(exc.stdout, str) else "", "error": f"тайм-аут {timeout} с"}
+        except OSError as exc:
+            return {"ok": False, "return_code": None, "command": command, "error": str(exc)}
 
     def probe_runtime(self) -> dict[str, Any]:
         timeout = int(self.satdump_cfg.get("health_timeout_seconds", 30))
-        command = self._runner_command(["version"])
-        started = datetime.now(timezone.utc)
-        try:
-            process = subprocess.run(
-                command,
-                cwd=self.root,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                timeout=timeout,
-                check=False,
-                env={**os.environ, "SATPROF_WORKSPACE": str(self.workspace.root)},
-            )
-            output = process.stdout[-8000:].strip()
-            return {
-                "ok": process.returncode == 0,
-                "return_code": process.returncode,
-                "command": command,
-                "output": output,
-                "duration_seconds": (
-                    datetime.now(timezone.utc) - started
-                ).total_seconds(),
-            }
-        except subprocess.TimeoutExpired as exc:
-            return {
-                "ok": False,
-                "return_code": None,
-                "command": command,
-                "output": (exc.stdout or "")[-8000:] if isinstance(exc.stdout, str) else "",
-                "error": f"тайм-аут {timeout} с",
-                "duration_seconds": (
-                    datetime.now(timezone.utc) - started
-                ).total_seconds(),
-            }
-        except OSError as exc:
-            return {"ok": False, "return_code": None, "command": command, "error": str(exc)}
+        result = self._probe(["version"], timeout)
+        result["level1c"] = self._probe(["level1c", "--help"], timeout)
+        result["ok"] = bool(result.get("ok") and result["level1c"].get("ok"))
+        return result
 
     def validate(self, *, deep: bool = False) -> dict[str, Any]:
         errors: list[str] = []
         warnings: list[str] = []
         paths = self._runtime_paths()
-        if not self.root.is_dir():
-            errors.append(f"Каталог исходников SatDump не найден: {self.root}")
-        if not self.runner.is_file():
-            errors.append(f"Сценарий запуска SatDump не найден: {self.runner}")
-        branch = self.detect_branch()
-        commit = self.detect_commit()
-        dirty = self.source_dirty()
+        if not self.root.is_dir(): errors.append(f"Каталог исходников SatDump не найден: {self.root}")
+        if not self.runner.is_file(): errors.append(f"Сценарий запуска SatDump не найден: {self.runner}")
+        branch = self.detect_branch(); commit = self.detect_commit(); dirty = self.source_dirty()
         if branch and branch != self.required_branch:
-            if self.expected_commit and commit and commit.startswith(self.expected_commit):
-                warnings.append(
-                    f"Исходники находятся в detached HEAD {commit[:12]}, закреплённом expected_commit"
-                )
-            else:
-                errors.append(f"Ожидалась ветка SatDump {self.required_branch}, найдена {branch}")
-        if branch is None:
-            warnings.append("Копия SatDump не содержит доступного Git-репозитория")
-        if dirty:
-            warnings.append("В исходниках SatDump имеются незакоммиченные изменения")
-        if self.expected_commit and (not commit or not commit.startswith(self.expected_commit)):
-            errors.append(
-                f"Ожидался commit SatDump {self.expected_commit}, найден {commit or 'не определён'}"
-            )
-        if not self.install_prefix.is_dir():
-            errors.append(f"Установочный prefix SatDump не найден: {self.install_prefix}")
+            if self.expected_commit and commit and commit.startswith(self.expected_commit): warnings.append(f"Исходники находятся в detached HEAD {commit[:12]}, закреплённом expected_commit")
+            else: errors.append(f"Ожидалась ветка SatDump {self.required_branch}, найдена {branch}")
+        if branch is None: warnings.append("Копия SatDump не содержит доступного Git-репозитория")
+        if dirty: warnings.append("В исходниках SatDump имеются незакоммиченные изменения")
+        if self.expected_commit and (not commit or not commit.startswith(self.expected_commit)): errors.append(f"Ожидался commit SatDump {self.expected_commit}, найден {commit or 'не определён'}")
+        if not self.install_prefix.is_dir(): errors.append(f"Установочный prefix SatDump не найден: {self.install_prefix}")
         for key in ("binary", "resources", "pipelines", "config"):
             path = paths[key]
             if key == "binary":
-                if not path.is_file() or not os.access(path, os.X_OK):
-                    errors.append(f"Исполняемый файл SatDump не найден: {path}")
+                if not path.is_file() or not os.access(path, os.X_OK): errors.append(f"Исполняемый файл SatDump не найден: {path}")
             elif key == "config":
-                if not path.is_file():
-                    errors.append(f"Конфигурация SatDump не найдена: {path}")
-            elif not path.is_dir():
-                errors.append(f"Каталог SatDump {key} не найден: {path}")
+                if not path.is_file(): errors.append(f"Конфигурация SatDump не найдена: {path}")
+            elif not path.is_dir(): errors.append(f"Каталог SatDump {key} не найден: {path}")
         marker = _read_key_value(paths["marker"])
-        if not marker:
-            warnings.append("Нет маркера .satdump-install-root; сборка не аттестована сценарием Astra")
-        if marker.get("source") and commit and not commit.startswith(marker["source"]):
-            warnings.append(
-                "Установленный SatDump собран из другого commit, чем текущие исходники"
-            )
-        result: dict[str, Any] = {
-            "ok": not errors,
-            "root": str(self.root),
-            "runner": str(self.runner),
-            "install_prefix": str(self.install_prefix),
-            "binary": str(paths["binary"]),
-            "branch": branch,
-            "required_branch": self.required_branch,
-            "commit": commit,
-            "expected_commit": self.expected_commit,
-            "source_dirty": dirty,
-            "marker": marker,
-            "repository": self.satdump_cfg.get("repository"),
-            "errors": errors,
-            "warnings": warnings,
-        }
+        if not marker: warnings.append("Нет маркера .satdump-install-root; сборка не аттестована сценарием Astra")
+        if marker.get("source") and commit and not commit.startswith(marker["source"]): warnings.append("Установленный SatDump собран из другого commit, чем текущие исходники")
+        result: dict[str, Any] = {"ok": not errors, "root": str(self.root), "runner": str(self.runner), "install_prefix": str(self.install_prefix), "binary": str(paths["binary"]), "branch": branch, "required_branch": self.required_branch, "commit": commit, "expected_commit": self.expected_commit, "source_dirty": dirty, "marker": marker, "repository": self.satdump_cfg.get("repository"), "errors": errors, "warnings": warnings}
         if deep and not errors:
-            probe = self.probe_runtime()
-            result["probe"] = probe
+            probe = self.probe_runtime(); result["probe"] = probe
             if not probe.get("ok"):
-                errors.append(
-                    "SatDump не проходит запуск version: "
-                    + str(probe.get("error") or probe.get("output") or "неизвестная ошибка")
-                )
+                exporter = probe.get("level1c") or {}
+                errors.append("SatDump runtime/level1c не проходит запуск: " + str(exporter.get("error") or exporter.get("output") or probe.get("error") or probe.get("output") or "неизвестная ошибка"))
                 result["ok"] = False
         return result
 
 
+def _materialize_watch_manifests(workspace: Workspace, cfg: dict[str, Any], inbox: Path) -> list[Path]:
+    satdump_cfg = cfg.get("satdump", {})
+    generated: list[Path] = []
+    now = time.time()
+    for index, profile in enumerate(satdump_cfg.get("watch_profiles", []) or []):
+        if not profile.get("enabled", True): continue
+        name = str(profile.get("name") or f"profile-{index + 1}")
+        root_value = profile.get("root")
+        if not root_value: continue
+        root = resolve_path(cfg, root_value, workspace_relative=True)
+        if not root.is_dir(): continue
+        pattern = str(profile.get("glob", "*"))
+        files = root.rglob(pattern) if profile.get("recursive", False) else root.glob(pattern)
+        min_age = float(profile.get("min_age_seconds", 30)); min_size = int(profile.get("min_size_bytes", 1))
+        for source in sorted(path for path in files if path.is_file()):
+            stat = source.stat()
+            if stat.st_size < min_size or now - stat.st_mtime < min_age: continue
+            digest = sha256_file(source)
+            state_key = f"satdump.watch:{name}:{source.resolve()}"
+            existing = workspace.get_state(state_key)
+            manifest_name = f"auto-{_safe_name(name)}-{_safe_name(source.stem)}-{digest[:12]}.satprof.json"
+            target = inbox / manifest_name
+            if existing == digest:
+                if target.exists(): generated.append(target)
+                continue
+            manifest: dict[str, Any] = {"schema": "satprof.satdump-job/1", "input_file": str(source.resolve()), "pipeline": profile["pipeline"], "input_level": profile.get("input_level", "baseband"), "instrument": profile["instrument"], "satellite": profile.get("satellite", "unknown"), "output_name": profile.get("output_name_prefix", _safe_name(name)) + "-" + source.stem + "-" + digest[:10], "extra_args": profile.get("extra_args", []), "reader": profile.get("reader", {"type": "auto"}), "watch": {"profile": name, "source_sha256": digest, "source_size": stat.st_size, "source_mtime": stat.st_mtime}}
+            if profile.get("samplerate") is not None: manifest["samplerate"] = int(profile["samplerate"])
+            if profile.get("baseband_format"): manifest["baseband_format"] = str(profile["baseband_format"])
+            _atomic_json(target, manifest)
+            workspace.set_state(state_key, digest)
+            workspace.emit_event("satdump.watch", f"Создано автоматическое задание {name}: {source.name}", details={"manifest": str(target), "source": str(source), "sha256": digest})
+            generated.append(target)
+    return generated
+
+
 def discover_manifests(workspace: Workspace, cfg: dict[str, Any]) -> list[Path]:
     satdump_cfg = cfg.get("satdump", {})
-    inbox = resolve_path(
-        cfg,
-        satdump_cfg.get("inbox", "inbox/satdump"),
-        workspace_relative=True,
-    )
+    inbox = resolve_path(cfg, satdump_cfg.get("inbox", "inbox/satdump"), workspace_relative=True)
     inbox.mkdir(parents=True, exist_ok=True)
-    return sorted(
-        path
-        for path in inbox.glob(satdump_cfg.get("manifest_glob", "*.satprof.json"))
-        if path.is_file()
-    )
+    _materialize_watch_manifests(workspace, cfg, inbox)
+    return sorted(path for path in inbox.glob(satdump_cfg.get("manifest_glob", "*.satprof.json")) if path.is_file())
