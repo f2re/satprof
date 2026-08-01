@@ -52,6 +52,7 @@ BUILDER="${STAGING}/builder-venv"
 "${PYTHON_BIN}" -m venv "${BUILDER}"
 "${BUILDER}/bin/pip" install --upgrade pip setuptools wheel
 log_info "Сборка нативного wheelhouse"
+"${BUILDER}/bin/pip" download --dest "${ROOT}/wheelhouse" pip setuptools wheel
 "${BUILDER}/bin/pip" wheel --wheel-dir "${ROOT}/wheelhouse" "${ROOT}/satprof[all,test]"
 
 if (( INCLUDE_SATDUMP_SOURCE == 1 )); then

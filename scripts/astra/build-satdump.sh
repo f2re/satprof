@@ -64,18 +64,23 @@ BUILD_GROUP="$(real_group)"
 if [[ ! -d "${SOURCE}/.git" ]]; then
     (( UPDATE == 1 )) || die "Исходники отсутствуют: ${SOURCE}"
     parent="$(dirname "${SOURCE}")"
-    as_root install -d -o "${BUILD_USER}" -g "${BUILD_GROUP}" "${parent}"
-    log_info "Клонирование SatDump ${BRANCH}"
-    if [[ "$(id -un)" == "${BUILD_USER}" ]]; then
-        git clone --branch "${BRANCH}" --single-branch "${REPOSITORY}" "${SOURCE}"
-    elif command_exists sudo; then
-        sudo -u "${BUILD_USER}" git clone --branch "${BRANCH}" --single-branch "${REPOSITORY}" "${SOURCE}"
-    else
-        die "Невозможно выполнить clone от пользователя ${BUILD_USER}"
-    fi
+    as_root install -d -m 0755 "${parent}"
+    clone_root="$(mktemp -d "${TMPDIR:-/tmp}/satdump-clone.XXXXXX")"
+    trap 'rm -rf "${clone_root}"' EXIT
+    log_info "Клонирование SatDump ${BRANCH} во временный каталог"
+    git clone --branch "${BRANCH}" --single-branch "${REPOSITORY}" "${clone_root}/SatDump"
+    [[ ! -e "${SOURCE}" ]] || die "Целевой путь существует и не является Git-репозиторием: ${SOURCE}"
+    as_root mv "${clone_root}/SatDump" "${SOURCE}"
+    as_root chown -R "${BUILD_USER}:${BUILD_GROUP}" "${SOURCE}"
+    rm -rf "${clone_root}"
+    trap - EXIT
 fi
 
 [[ -d "${SOURCE}/.git" ]] || die "${SOURCE} не является Git-репозиторием"
+if [[ ! -w "${SOURCE}/.git" ]]; then
+    log_warn "Исходники SatDump недоступны пользователю ${BUILD_USER}; исправление владельца выделенного дерева"
+    as_root chown -R "${BUILD_USER}:${BUILD_GROUP}" "${SOURCE}"
+fi
 if (( ALLOW_DIRTY == 0 )) && [[ -n "$(git -C "${SOURCE}" status --porcelain)" ]]; then
     die "Исходники SatDump содержат незакоммиченные изменения; используйте --allow-dirty осознанно"
 fi
@@ -112,7 +117,7 @@ fi
 log_info "Проверка среды SatDump"
 bash "${SOURCE}/scripts/astra/check-system.sh" --strict
 
-RELEASE_NAME="1.2.2-${ASTRA_VERSION}-${PROFILE}-${SHORT_COMMIT}"
+RELEASE_NAME="satdump-1.2.2-${ASTRA_VERSION}-${PROFILE}-${SHORT_COMMIT}"
 RELEASE_PREFIX="${INSTALL_ROOT}/releases/${RELEASE_NAME}"
 BUILD_DIR="${SOURCE}/build/satprof-astra-${ASTRA_VERSION}-${PROFILE}-${SHORT_COMMIT}"
 as_root install -d -o "${BUILD_USER}" -g "${BUILD_GROUP}" "${INSTALL_ROOT}/releases"

@@ -34,8 +34,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: true
-      - name: Проверка Astra
-        run: bash scripts/astra/check-system.sh --strict
+      - name: Предварительная диагностика Astra
+        run: bash scripts/astra/check-system.sh
       - name: Тестовая сборка SatProf
         run: |
           bash scripts/astra/deploy.sh \
@@ -43,19 +43,28 @@ jobs:
             --prefix "$RUNNER_TEMP/satprof" \
             --config "$RUNNER_TEMP/satprof-config.yaml" \
             --workspace "$RUNNER_TEMP/satprof-workspace" \
-            --no-start
+            --no-systemd
       - name: SatDump release/1.2.2
         if: ${{ github.event_name == 'push' || inputs.build_satdump }}
         env:
           SATDUMP_SOURCE: ${{ runner.temp }}/SatDump
           SATDUMP_INSTALL_ROOT: ${{ runner.temp }}/satdump
         run: bash scripts/astra/build-satdump.sh --install-deps
+      - name: Строгая проверка связки
+        if: ${{ github.event_name == 'push' || inputs.build_satdump }}
+        env:
+          SATDUMP_SOURCE: ${{ runner.temp }}/SatDump
+          SATDUMP_PREFIX: ${{ runner.temp }}/satdump/current
+          SATPROF_WORKSPACE: ${{ runner.temp }}/satprof-workspace
+        run: bash scripts/astra/check-system.sh --strict
       - name: Офлайн-бандл
+        if: ${{ github.event_name == 'push' || inputs.build_satdump }}
         env:
           SATDUMP_SOURCE: ${{ runner.temp }}/SatDump
           SATDUMP_PREFIX: ${{ runner.temp }}/satdump/current
         run: bash scripts/astra/build-offline-bundle.sh --output "$RUNNER_TEMP/artifacts"
       - uses: actions/upload-artifact@v4
+        if: ${{ github.event_name == 'push' || inputs.build_satdump }}
         with:
           name: satprof-${{ matrix.label }}-${{ github.sha }}
           path: ${{ runner.temp }}/artifacts/*

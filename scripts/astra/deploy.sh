@@ -11,6 +11,7 @@ WHEELHOUSE=""
 RELEASE_ID=""
 SKIP_TESTS=0
 NO_START=0
+NO_SYSTEMD=0
 KEEP_RELEASES="${SATPROF_KEEP_RELEASES:-4}"
 HEALTH_TIMEOUT="${SATPROF_HEALTH_TIMEOUT:-90}"
 
@@ -26,6 +27,7 @@ usage() {
   --release-id ID     имя релиза; иначе UTC+Git SHA
   --skip-tests        не выполнять pytest/compileall
   --no-start          установить, но не запускать службы
+  --no-systemd        не устанавливать unit-файлы (CI/тестовый prefix)
   --keep N            число хранимых релизов
 
 Развёртывание создаёт неизменяемый release, новую venv, проверяет её, атомарно
@@ -43,6 +45,7 @@ while (( $# )); do
         --release-id) RELEASE_ID="$2"; shift 2 ;;
         --skip-tests) SKIP_TESTS=1; shift ;;
         --no-start) NO_START=1; shift ;;
+        --no-systemd) NO_SYSTEMD=1; NO_START=1; shift ;;
         --keep) KEEP_RELEASES="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) die "Неизвестный параметр: $1" ;;
@@ -67,6 +70,9 @@ VENV_LINK="${PREFIX}/.venv"
 PREVIOUS_RELEASE="$(readlink -f "${CURRENT_LINK}" 2>/dev/null || true)"
 PREVIOUS_VENV="$(readlink -f "${VENV_LINK}" 2>/dev/null || true)"
 
+if ! id satprof >/dev/null 2>&1; then
+    as_root useradd --system --home "${PREFIX}" --shell /usr/sbin/nologin satprof
+fi
 as_root install -d -m 0755 "${PREFIX}" "${RELEASES}" "$(dirname "${CONFIG}")"
 as_root install -d -o satprof -g satprof -m 0750 "${WORKSPACE}"
 [[ ! -e "${RELEASE}" ]] || die "Релиз уже существует: ${RELEASE}"
@@ -85,12 +91,14 @@ as_root rsync -a --delete \
 log_info "Создание Python-окружения"
 as_root "${PYTHON_BIN}" -m venv "${RELEASE}/.venv"
 PIP=("${RELEASE}/.venv/bin/pip")
-as_root "${PIP[@]}" install --upgrade pip setuptools wheel
 INSTALL_ARGS=(install --no-build-isolation)
 if [[ -n "${WHEELHOUSE}" ]]; then
     WHEELHOUSE="$(readlink -m "${WHEELHOUSE}")"
     [[ -d "${WHEELHOUSE}" ]] || die "Wheelhouse не найден: ${WHEELHOUSE}"
+    as_root "${PIP[@]}" install --no-index --find-links "${WHEELHOUSE}" --upgrade pip setuptools wheel
     INSTALL_ARGS+=(--no-index --find-links "${WHEELHOUSE}")
+else
+    as_root "${PIP[@]}" install --upgrade pip setuptools wheel
 fi
 if (( SKIP_TESTS == 0 )); then
     INSTALL_ARGS+=("${RELEASE}[all,test]")
@@ -123,6 +131,7 @@ fi
 as_root install -m 0640 -o root -g satprof "${RELEASE}/systemd/satprof.env.example" "${ENV_FILE}.new"
 as_root sed -i "s|SATPROF_CONFIG=.*|SATPROF_CONFIG=${CONFIG}|" "${ENV_FILE}.new"
 if [[ -f "${ENV_FILE}" ]]; then
+    # Preserve operator-provided secrets and overrides, but keep the requested config path.
     as_root sh -c "grep -v '^SATPROF_CONFIG=' '${ENV_FILE}' >> '${ENV_FILE}.new' || true"
 fi
 as_root awk '!seen[$0]++' "${ENV_FILE}.new" | as_root tee "${ENV_FILE}" >/dev/null
@@ -132,14 +141,16 @@ as_root chmod 0640 "${ENV_FILE}"
 
 as_root "${RELEASE}/.venv/bin/satprof" init --config "${CONFIG}"
 
-for unit in satprof-web.service satprof-worker.service satprof-wis2.service satprof-monitor.service satprof-monitor.timer; do
-    [[ -f "${RELEASE}/systemd/${unit}" ]] || continue
-    rendered="/tmp/${unit}.$$"
-    sed "s|/opt/satprof|${PREFIX}|g" "${RELEASE}/systemd/${unit}" >"${rendered}"
-    as_root install -m 0644 "${rendered}" "/etc/systemd/system/${unit}"
-    rm -f "${rendered}"
-done
-as_root systemctl daemon-reload
+if (( NO_SYSTEMD == 0 )); then
+    for unit in satprof-web.service satprof-worker.service satprof-wis2.service satprof-monitor.service satprof-monitor.timer; do
+        [[ -f "${RELEASE}/systemd/${unit}" ]] || continue
+        rendered="/tmp/${unit}.$$"
+        sed "s|/opt/satprof|${PREFIX}|g" "${RELEASE}/systemd/${unit}" >"${rendered}"
+        as_root install -m 0644 "${rendered}" "/etc/systemd/system/${unit}"
+        rm -f "${rendered}"
+    done
+    as_root systemctl daemon-reload
+fi
 
 cat >"/tmp/satprof-release-manifest.$$" <<EOF
 schema=satprof-release/1
